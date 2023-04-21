@@ -4,7 +4,7 @@
 namespace PlotUtils {
 
 //==============================================================================
-// Interaction type constructor
+// Interaction type Universe
 //==============================================================================
 template <class T>
 class MLIntTypeUniverse : public T {
@@ -12,13 +12,17 @@ class MLIntTypeUniverse : public T {
    double m_rez;
    bool m_isInclusion = true;
     
-    //==========================================================================
-    // Constructor
-    //==========================================================================
+   //===========================================================================
+   // Constructor
+   //===========================================================================
+   // chw: Chain with events
+   // nsigma = {1,...,Univs}
+   // rez: Number of universes plus 1 -> Univs + 1
    public:
    MLIntTypeUniverse(PlotUtils::ChainWrapper* chw, double nsigma, double rez) :
        m_rez(rez), T(chw, nsigma){}
-       
+   
+   // Can't remember what these were for...
    virtual void SetMLIntTypeInlcusion() {m_isInclusion = !m_isInclusion;}
    virtual bool IsMLIntTypeInclusion() const override {return m_isInclusion;}
    
@@ -26,32 +30,33 @@ class MLIntTypeUniverse : public T {
     // Machine learning predictions related variables
     //==========================================================================
    virtual std::vector<double> GetUnshiftedIntTypeSoft() const {
-       return T::GetIntTypeSoft();
+      return T::GetIntTypeSoft();
    }
     
    virtual std::vector<double> GetIntTypeSoft() const override {
-        std::vector<double> softmax = T::GetIntTypeSoft();
-        int maxProbIndex;
-        double maxProb;
-        
-        if (IsMLShiftedIntType()) {
-            maxProbIndex = T::GetMLIntType();
-            maxProb = softmax[maxProbIndex];
-            softmax[maxProbIndex] = 0.0;
-            
-            for (unsigned int i = 0; i < softmax.size(); ++i)
-                softmax[i] /= (1 - maxProb);
-        }
-        
-        return softmax;
+      std::vector<double> softmax = T::GetIntTypeSoft();
+      int maxProbIndex;
+      double maxProb;
+      
+      if (IsMLShiftedIntType()) {
+         maxProbIndex = T::GetMLIntType();
+         maxProb = softmax[maxProbIndex];
+         softmax[maxProbIndex] = 0.0;
+         
+         for (unsigned int i = 0; i < softmax.size(); ++i)
+            softmax[i] /= (1 - maxProb);
+      }
+      
+      return softmax;
    }
    
    virtual int GetUnshiftedMLIntType() const override {
-       return T::GetMLIntType();
+      return T::GetMLIntType();
    }
    
    virtual int GetMLIntType() const override {
-      double sigRezRatio = T::m_nsigma / m_rez;
+      double nsigma = T::m_nsigma;
+      double sigRezRatio = nsigma / m_rez;
       std::vector<double> probs = T::GetIntTypeSoft();
       double nClasses = (double)probs.size();
       int maxProbIndex = T::GetMLIntType();
@@ -71,6 +76,14 @@ class MLIntTypeUniverse : public T {
       secondThreshold =
          (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
       
+      // We need to take care of maxProb < 1/2 cases
+      double maxAvailProb = maxProb / (1 - maxProb);
+      while (secondThreshold > maxAvailProb && nsigma > 0) {
+         sigRezRatio = --nsigma / m_rez;
+         secondThreshold =
+            (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
+      }
+      
       if (maxProb < threshold && secondMaxProb > secondThreshold)
          return secondMaxProbIndex;
       
@@ -78,7 +91,7 @@ class MLIntTypeUniverse : public T {
    }
    
    virtual bool IsMLShiftedIntType() const {
-       return GetMLIntType() != T::GetMLIntType();
+      return GetMLIntType() != T::GetMLIntType();
    }
    
    //===========================================================================
@@ -91,7 +104,7 @@ class MLIntTypeUniverse : public T {
 
 
 //==============================================================================
-// Multiplicity constructor
+// Multiplicity Universe
 //==============================================================================
 template <class T>
 class MLMultUniverse : public T {
@@ -103,30 +116,30 @@ class MLMultUniverse : public T {
     //==========================================================================
    public:
    MLMultUniverse(PlotUtils::ChainWrapper* chw, double nsigma, double rez) :
-       m_rez(rez), T(chw, nsigma) {}
+      m_rez(rez), T(chw, nsigma) {}
     
-    //==========================================================================
-    // Machine learning predictions related variables
-    //==========================================================================
+   //===========================================================================
+   // Machine learning predictions related variables
+   //===========================================================================
    virtual std::vector<double> GetUnshiftedMultSoft() const {
-       return T::GetMultSoft();
+      return T::GetMultSoft();
    }
     
    virtual std::vector<double> GetMultSoft() const override {
-        std::vector<double> softmax = T::GetMultSoft();
-        int maxProbIndex;
-        double maxProb;
-        
-        if (IsMLShiftedMult()) {
-            maxProbIndex = (int)T::GetMLHadMult();
-            maxProb = softmax[maxProbIndex];
-            softmax[maxProbIndex] = 0.0;
-            
-            for (unsigned int i = 0; i < softmax.size(); ++i)
-                softmax[i] /= (1 - maxProb);
-        }
-        
-        return softmax;
+      std::vector<double> softmax = T::GetMultSoft();
+      int maxProbIndex;
+      double maxProb;
+      
+      if (IsMLShiftedMult()) {
+         maxProbIndex = (int)T::GetMLHadMult();
+         maxProb = softmax[maxProbIndex];
+         softmax[maxProbIndex] = 0.0;
+         
+         for (unsigned int i = 0; i < softmax.size(); ++i)
+            softmax[i] /= (1 - maxProb);
+      }
+      
+      return softmax;
    }
    
    virtual int GetUnshiftedMLHadMult() const override {
@@ -134,34 +147,43 @@ class MLMultUniverse : public T {
    }
    
    virtual double GetMLHadMult() const override {
-     double sigRezRatio = T::m_nsigma / m_rez;
-     std::vector<double> probs = T::GetMultSoft();
-     double nClasses = (double)probs.size();
-     int maxProbIndex = (int)T::GetMLHadMult();
-    
-     double maxProb = probs[maxProbIndex];
-     int secondMaxProbIndex;
-     double secondMaxProb;
-     double threshold;
-     double secondThreshold;
-      
-     probs[maxProbIndex] = 0.0;
-     secondMaxProbIndex =
-       std::max_element(probs.begin(), probs.end()) - probs.begin();
-      
-     secondMaxProb = probs[secondMaxProbIndex] / (1 - maxProb);
-     threshold = (1 + sigRezRatio * (nClasses - 1)) / nClasses;
-     secondThreshold =
-       (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
-      
-     if (maxProb < threshold && secondMaxProb > secondThreshold)
-       return secondMaxProbIndex;
+      double nsigma = T::m_nsigma;
+      double sigRezRatio = nsigma / m_rez;
+      std::vector<double> probs = T::GetMultSoft();
+      double nClasses = (double)probs.size();
+      int maxProbIndex = (int)T::GetMLHadMult();
+     
+      double maxProb = probs[maxProbIndex];
+      int secondMaxProbIndex;
+      double secondMaxProb;
+      double threshold;
+      double secondThreshold;
        
-     return (double)maxProbIndex;
+      probs[maxProbIndex] = 0.0;
+      secondMaxProbIndex =
+         std::max_element(probs.begin(), probs.end()) - probs.begin();
+       
+      secondMaxProb = probs[secondMaxProbIndex] / (1 - maxProb);
+      threshold = (1 + sigRezRatio * (nClasses - 1)) / nClasses;
+      secondThreshold =
+         (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
+      
+      // We need to take care of maxProb < 1/2 cases
+      double maxAvailProb = maxProb / (1 - maxProb);
+      while (secondThreshold > maxAvailProb && nsigma > 0) {
+         sigRezRatio = --nsigma / m_rez;
+         secondThreshold =
+            (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
+      }
+      
+      if (maxProb < threshold && secondMaxProb > secondThreshold)
+         return secondMaxProbIndex;
+      
+      return (double)maxProbIndex;
    }
    
    virtual bool IsMLShiftedMult() const {
-     return GetMLHadMult() != T::GetMLHadMult();
+      return GetMLHadMult() != T::GetMLHadMult();
    }
    
    //===========================================================================
@@ -175,27 +197,27 @@ class MLMultUniverse : public T {
 
 template <class T>
 std::map<std::string, std::vector<T*>>
-    GetMLIntTypeSystMap(typename T::config_t chw, int univs) {
-    std::map<std::string, std::vector<T*>> ret;
-    int rez = univs + 1;
-    for (int sigma = 1; sigma < rez; ++sigma)
-        ret["ML_Int_Type"].push_back(new
-            PlotUtils::MLIntTypeUniverse<T>(chw, (double)sigma, (double)rez));
-    
-    return ret;
+   GetMLIntTypeSystMap(typename T::config_t chw, int univs) {
+   std::map<std::string, std::vector<T*>> ret;
+   int rez = univs + 1;
+   for (int sigma = 1; sigma < rez; ++sigma)
+      ret["ML_Int_Type"].push_back(new
+         PlotUtils::MLIntTypeUniverse<T>(chw, (double)sigma, (double)rez));
+   
+   return ret;
 }
 
 
 template <class T>
 std::map<std::string, std::vector<T*>>
-    GetMLMultMap(typename T::config_t chw, int univs) {
-    std::map<std::string, std::vector<T*>> ret;
-    int rez = univs + 1;
-    for (int sigma = 1; sigma < rez; ++sigma)
-        ret["ML_multiplicity"].push_back(new
-            PlotUtils::MLMultUniverse<T>(chw, (double)sigma, (double)rez));
-    
-    return ret;
+   GetMLMultMap(typename T::config_t chw, int univs) {
+   std::map<std::string, std::vector<T*>> ret;
+   int rez = univs + 1;
+   for (int sigma = 1; sigma < rez; ++sigma)
+      ret["ML_multiplicity"].push_back(new
+         PlotUtils::MLMultUniverse<T>(chw, (double)sigma, (double)rez));
+   
+   return ret;
 }
 
 }
