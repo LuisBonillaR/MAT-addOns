@@ -10,8 +10,7 @@ template <class T>
 class MLIntTypeUniverse : public T {
    private:
    double m_rez;
-   bool m_isInclusion = true;
-    
+   
    //===========================================================================
    // Constructor
    //===========================================================================
@@ -21,10 +20,6 @@ class MLIntTypeUniverse : public T {
    public:
    MLIntTypeUniverse(PlotUtils::ChainWrapper* chw, double nsigma, double rez) :
        m_rez(rez), T(chw, nsigma){}
-   
-   // Can't remember what these were for...
-   virtual void SetMLIntTypeInlcusion() {m_isInclusion = !m_isInclusion;}
-   virtual bool IsMLIntTypeInclusion() const override {return m_isInclusion;}
    
     //==========================================================================
     // Machine learning predictions related variables
