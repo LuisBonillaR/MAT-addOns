@@ -398,7 +398,7 @@ std::map<std::string, std::vector<T*>>
   int depth = -1;
   for (double sigma = 1; sigma < (double)univs + 1; ++sigma)
     ret["ML_Int_Type"].push_back(new
-      PlotUtils::MLIntTypeUniverse<T>(chw, sigma, (double)univs));
+      PlotUtils::MLIntTypeUniverse<T>(chw, sigma, (double)univs), depth);
   
   return ret;
 }
@@ -409,10 +409,10 @@ template <class T>
 std::map<std::string, std::vector<T*>>
    GetMLMultMap(typename T::config_t chw, int univs) {
    std::map<std::string, std::vector<T*>> ret;
-   int rez = univs + 1;
-   for (int sigma = 1; sigma < rez; ++sigma)
+  double depth = -1;
+  for (double sigma = 1; sigma < (double)univs + 1; ++sigma)
       ret["ML_multiplicity"].push_back(new
-         PlotUtils::MLMultUniverse<T>(chw, (double)sigma, (double)rez));
+         PlotUtils::MLMultUniverse<T>(chw, sigma, (double)univs), depth);
    
    return ret;
 }
