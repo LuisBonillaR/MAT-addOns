@@ -398,7 +398,7 @@ std::map<std::string, std::vector<T*>>
   int depth = -1;
   for (double sigma = 1; sigma < (double)univs + 1; ++sigma)
     ret["ML_Int_Type"].push_back(new
-      PlotUtils::MLIntTypeUniverse<T>(chw, sigma, (double)univs), depth);
+      PlotUtils::MLIntTypeUniverse<T>(chw, sigma, (double)univs, depth));
   
   return ret;
 }
@@ -412,7 +412,7 @@ std::map<std::string, std::vector<T*>>
   double depth = -1;
   for (double sigma = 1; sigma < (double)univs + 1; ++sigma)
       ret["ML_multiplicity"].push_back(new
-         PlotUtils::MLMultUniverse<T>(chw, sigma, (double)univs), depth);
+         PlotUtils::MLMultUniverse<T>(chw, sigma, (double)univs, depth));
    
    return ret;
 }
