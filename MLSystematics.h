@@ -3,6 +3,65 @@
 
 namespace PlotUtils {
 
+
+// Helper function:
+// sigma: number of current universe
+// rez: total number of universes + 1
+// nClasses: number of classes
+// probs: vector of confidence (softmax)
+// maxProbIndex: reconstructed class. Will be modified after running
+// This function will be used for the calculation of alternate unverses, so
+// the maxProbIndex will likely change
+bool CalcMLClassShift(double sigma,
+                      double rez,
+                      double nClasses,
+                      std::vector<double> probs,
+                      int& maxProbIndex)  {
+  
+  bool hasShift = false;
+  
+  maxProbIndex =
+    std::max_element(probs.begin(), probs.end()) - probs.begin();
+  double maxProb = probs[maxProbIndex];
+  
+  int secondMaxProbIndex;
+  double secondMaxProb;
+  
+  double threshold;
+  double secondThreshold;
+  double sigRezRatio = sigma / rez;
+  
+  threshold = (1 + sigRezRatio * (nClasses - 1)) / nClasses;
+  probs[maxProbIndex] = 0.0;
+  secondMaxProbIndex =
+    std::max_element(probs.begin(), probs.end()) - probs.begin();
+  if (nClasses == 2) {
+    secondMaxProb = 2 * probs[secondMaxProbIndex];
+    secondThreshold = sigRezRatio;
+  }
+  else {
+    secondMaxProb = probs[secondMaxProbIndex] / (1 - maxProb);
+    secondThreshold = (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
+  }
+  
+  // We need to take care of maxProb < 1/2 cases
+  double maxAvailProb = maxProb / (1 - maxProb);
+  while (secondThreshold > maxAvailProb && sigma > 0) {
+    sigRezRatio = --sigma / rez;
+    secondThreshold =
+      (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
+  }
+  
+  if (maxProb < threshold && secondMaxProb > secondThreshold) {
+    maxProbIndex = secondMaxProbIndex;
+    hasShift = true;
+  }
+  
+  return hasShift;
+}
+
+
+
 //==============================================================================
 // Interaction type Universe
 //==============================================================================
@@ -10,11 +69,11 @@ template <class T>
 class MLIntTypeUniverse : public T {
   private:
   double m_rez;
+  int m_depth;
   mutable int m_lastEntry = -1;
   mutable int m_intType = -1;
   mutable double m_nClasses = 3;
   mutable std::vector<double> m_conf;
-  bool m_depth;
   
   typedef PlotUtils::ChainWrapper ChW;
    
@@ -89,22 +148,23 @@ class MLIntTypeUniverse : public T {
       bool hasShift = true;
       
       int currentDepth = 0;
-      while (hasShift && nClasses > 1 && currentDepth < m_depth) {
+      while (hasShift && nClasses > 1 && currentDepth != m_depth) {
         ++currentDepth;
         double univs = 0;
         hasShift =
-          CalcMLIntTypeShift(iSigma, iRez, nClasses, probs, maxProbIndex);
+          CalcMLClassShift(iSigma, iRez, nClasses, probs, maxProbIndex);
         if (hasShift) {
           univs = 0;
           int deleteIndex =
             std::max_element(probs.begin(), probs.end()) - probs.begin();
           double deleteProb = probs[deleteIndex];
           
-          if (currentDepth < m_depth) {
+          // Count all universes whit shift
+          if (currentDepth != m_depth) {
             int dummyIndex;
             for (double jSigma = 1; jSigma < iRez; ++jSigma) {
               bool addUniv =
-                CalcMLIntTypeShift(jSigma, iRez, nClasses, probs, dummyIndex);
+                CalcMLClassShift(jSigma, iRez, nClasses, probs, dummyIndex);
               if (addUniv) {
                 ++univs;
                 if (jSigma == iSigma) iSigma = univs;
@@ -112,14 +172,16 @@ class MLIntTypeUniverse : public T {
             }
             
             iRez = univs + 1;
-          }
+          } // End shifted universes count
           
+          // do not change probabilities when there is only two classes!
+          if (nClasses > 2) {
           probs[deleteIndex] = 0.0;
           for (int index = 0; index < probs.size(); ++index)
             probs[index] /= 1 - deleteProb;
           maxProb = probs[maxProbIndex];
+          }
           --nClasses;
-          
         }
       }
       
@@ -129,55 +191,6 @@ class MLIntTypeUniverse : public T {
     }
     
     return true;
-  }
-  
-  
-  // sigma: number of current universe
-  // rez: total number of universes + 1
-  // nClasses: number of classes
-  // probs: vector of confidence (softmax)
-  // maxProbIndex: reconstructed class. Will be modified after running
-  // This function will be used for the calculation of alternate unverses, so
-  // the maxProbIndex will likely change
-  virtual bool CalcMLIntTypeShift(double sigma, double rez, double nClasses,
-    std::vector<double> probs, int& maxProbIndex) const {
-    
-    bool hasShift = false;
-    
-    maxProbIndex =
-      std::max_element(probs.begin(), probs.end()) - probs.begin();
-    double maxProb = probs[maxProbIndex];
-    
-    int secondMaxProbIndex;
-    double secondMaxProb;
-    
-    double threshold;
-    double secondThreshold;
-    double sigRezRatio = sigma / rez;
-    
-    probs[maxProbIndex] = 0.0;
-    secondMaxProbIndex =
-      std::max_element(probs.begin(), probs.end()) - probs.begin();
-    if (nClasses == 2) 
-      secondMaxProb = 2 * probs[secondMaxProbIndex];
-    else secondMaxProb = probs[secondMaxProbIndex] / (1 - maxProb);
-    threshold = (1 + sigRezRatio * (nClasses - 1)) / nClasses;
-    secondThreshold = (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
-    
-    // We need to take care of maxProb < 1/2 cases
-    double maxAvailProb = maxProb / (1 - maxProb);
-    while (secondThreshold > maxAvailProb && sigma > 0) {
-      sigRezRatio = --sigma / rez;
-      secondThreshold =
-        (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
-    }
-    
-    if (maxProb < threshold && secondMaxProb > secondThreshold) {
-      maxProbIndex = secondMaxProbIndex;
-      hasShift = true;
-    }
-    
-    return hasShift;
   }
   
   
@@ -203,11 +216,11 @@ template <class T>
 class MLMultUniverse : public T {
   private:
   double m_rez;
+  int m_depth;
   mutable int m_lastEntry = -1;
   mutable int m_hadMult = -1;
   mutable double m_nClasses = 3;
   mutable std::vector<double> m_conf;
-  bool m_depth;
   
   typedef PlotUtils::ChainWrapper ChW;
    
@@ -285,22 +298,22 @@ class MLMultUniverse : public T {
       bool hasShift = true;
       
       int currentDepth = 0;
-      while (hasShift && nClasses > 1 && currentDepth < m_depth) {
+      while (hasShift && nClasses > 1 && currentDepth != m_depth) {
         ++currentDepth;
         double univs = 0;
         hasShift =
-          CalcMLHadMultShift(iSigma, iRez, nClasses, probs, maxProbIndex);
+          CalcMLClassShift(iSigma, iRez, nClasses, probs, maxProbIndex);
         if (hasShift) {
           univs = 0;
           int deleteIndex =
             std::max_element(probs.begin(), probs.end()) - probs.begin();
           double deleteProb = probs[deleteIndex];
           
-          if (currentDepth < m_depth) {
+          if (currentDepth != m_depth) {
             int dummyIndex;
             for (double jSigma = 1; jSigma < iRez; ++jSigma) {
               bool addUniv =
-                CalcMLHadMultShift(jSigma, iRez, nClasses, probs, dummyIndex);
+                CalcMLClassShift(jSigma, iRez, nClasses, probs, dummyIndex);
               if (addUniv) {
                 ++univs;
                 if (jSigma == iSigma) iSigma = univs;
@@ -316,6 +329,16 @@ class MLMultUniverse : public T {
           maxProb = probs[maxProbIndex];
           --nClasses;
           
+          if (currentDepth > 1 && false) {
+            std::cout << "Current depth " << currentDepth << std::endl;
+            std::cout << "Max depth " << m_depth << std::endl;
+            std::cout << "Univs " << univs << std::endl;
+            std::cout << "nClasses " << nClasses << std::endl;
+            std::cout << "Prev mult " << deleteIndex << ". Next mult "
+              << maxProbIndex << std::endl;
+            std::cout << "Prev prob " << deleteProb << ". Next prob "
+              << maxProb << "\n" << std::endl;
+          }
         }
       }
       
@@ -325,55 +348,6 @@ class MLMultUniverse : public T {
     }
     
     return true;
-  }
-  
-  
-  // sigma: number of current universe
-  // rez: total number of universes + 1
-  // nClasses: number of classes
-  // probs: vector of confidence (softmax)
-  // maxProbIndex: reconstructed class. Will be modified after running
-  // This function will be used for the calculation of alternate unverses, so
-  // the maxProbIndex will likely change
-  virtual bool CalcMLHadMultShift(double sigma, double rez, double nClasses,
-    std::vector<double> probs, int& maxProbIndex) const {
-    
-    bool hasShift = false;
-    
-    maxProbIndex =
-      std::max_element(probs.begin(), probs.end()) - probs.begin();
-    double maxProb = probs[maxProbIndex];
-    
-    int secondMaxProbIndex;
-    double secondMaxProb;
-    
-    double threshold;
-    double secondThreshold;
-    double sigRezRatio = sigma / rez;
-    
-    probs[maxProbIndex] = 0.0;
-    secondMaxProbIndex =
-      std::max_element(probs.begin(), probs.end()) - probs.begin();
-    if (nClasses == 2) 
-      secondMaxProb = 2 * probs[secondMaxProbIndex];
-    else secondMaxProb = probs[secondMaxProbIndex] / (1 - maxProb);
-    threshold = (1 + sigRezRatio * (nClasses - 1)) / nClasses;
-    secondThreshold = (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
-    
-    // We need to take care of maxProb < 1/2 cases
-    double maxAvailProb = maxProb / (1 - maxProb);
-    while (secondThreshold > maxAvailProb && sigma > 0) {
-      sigRezRatio = --sigma / rez;
-      secondThreshold =
-        (1 + sigRezRatio * (nClasses - 2)) / (nClasses - 1);
-    }
-    
-    if (maxProb < threshold && secondMaxProb > secondThreshold) {
-      maxProbIndex = secondMaxProbIndex;
-      hasShift = true;
-    }
-    
-    return hasShift;
   }
   
   
@@ -409,7 +383,7 @@ template <class T>
 std::map<std::string, std::vector<T*>>
    GetMLMultMap(typename T::config_t chw, int univs) {
    std::map<std::string, std::vector<T*>> ret;
-  double depth = -1;
+  int depth = -1;
   for (double sigma = 1; sigma < (double)univs + 1; ++sigma)
       ret["ML_multiplicity"].push_back(new
          PlotUtils::MLMultUniverse<T>(chw, sigma, (double)univs, depth));
