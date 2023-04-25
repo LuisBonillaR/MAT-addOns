@@ -4,7 +4,7 @@
 namespace PlotUtils {
 
 
-// Helper function:
+// Helper functions:
 // sigma: number of current universe
 // rez: total number of universes + 1
 // nClasses: number of classes
@@ -62,6 +62,64 @@ bool CalcMLClassShift(double sigma,
 
 
 
+// depth: how many shifts are allowed (second, third,... most likely class)
+// Entry: used for debugging purposes 
+void CalcMLClassVars(double sigma,
+                     double rez,
+                     int depth,
+                     int& maxProbIndex,
+                     double& nClasses,
+                     std::vector<double>& probs) {
+  
+  maxProbIndex = std::max_element(probs.begin(), probs.end()) - probs.begin();
+  double maxProb = probs[maxProbIndex];
+  
+  double iRez = rez;
+  double iSigma = sigma;
+  bool hasShift = true;
+  
+  int currentDepth = 0;
+  while (hasShift && nClasses > 1 && currentDepth < depth) {
+    ++currentDepth;
+    double univs = 0;
+    hasShift =
+      CalcMLClassShift(iSigma, iRez, nClasses, probs, maxProbIndex);
+    if (hasShift) {
+      univs = 0;
+      int deleteIndex =
+        std::max_element(probs.begin(), probs.end()) - probs.begin();
+      double deleteProb = probs[deleteIndex];
+      
+      // Count all universes with shift
+      if (currentDepth < depth) {
+        int dummyIndex;
+        for (double jSigma = 1; jSigma < iRez; ++jSigma) {
+          bool addUniv =
+            CalcMLClassShift(jSigma, iRez, nClasses, probs, dummyIndex);
+          if (addUniv) {
+            ++univs;
+            if (jSigma == iSigma) iSigma = univs;
+          }
+        }
+        
+        iRez = univs + 1;
+      } // End shifted universes count
+      
+      // do not change probabilities when there is only two classes!
+      probs[deleteIndex] = 0.0;
+      if (nClasses > 4) {
+        for (int index = 0; index < probs.size(); ++index)
+          probs[index] /= 1 - deleteProb;
+      }
+      
+      maxProb = probs[maxProbIndex];
+      --nClasses;
+    }
+  }
+}
+
+
+
 //==============================================================================
 // Interaction type Universe
 //==============================================================================
@@ -85,13 +143,15 @@ class MLIntTypeUniverse : public T {
   // nsigma = {1,...,Univs} current universe
   // univs: Total number of universes
   // depth: maximum number of shifts. depth = 1 allows shift to second most
-  //   likely class, depth = 2 allows shit to third most likely class, etc.
+  //   likely class, depth = 2 allows shift to third most likely class, etc.
   //   depth = -1 allows all shifts.
   // Internal parameters:
   //   m_rez: "resolution" of the effective confidence interval scanning
   public:
   MLIntTypeUniverse(ChW* chw, double nsigma, double univs, int depth = -1) :
-    m_rez(univs+1), m_depth(depth), T(chw, nsigma) {}
+    m_rez(univs+1), T(chw, nsigma) {
+    if (depth < 0) m_depth = 3;
+  }
   
   //============================================================================
   // Machine learning predictions related variables
@@ -130,7 +190,7 @@ class MLIntTypeUniverse : public T {
   }
   
   
-  virtual bool CalcMLIntTypeVars() const {
+  virtual void CalcMLIntTypeVars() const {
     int currentEntry = T::GetEntry();
     // Runs only if it has not run for the current entry
     if (m_lastEntry != currentEntry) {
@@ -138,59 +198,19 @@ class MLIntTypeUniverse : public T {
       
       double sigma = T::m_nsigma;
       double rez = m_rez;
+      int depth = m_depth;
+      // Will be modified and retrieved
+      int maxProbIndex= T::GetMLIntType();
       double nClasses = (double)T::GetNMLIntTypeClasses();
       std::vector<double> probs = T::GetIntTypeSoft();
-      int maxProbIndex = T::GetMLIntType();
-      double maxProb = probs[maxProbIndex];
+      int entry = T::GetEntry();
       
-      double iRez = rez;
-      double iSigma = sigma;
-      bool hasShift = true;
-      
-      int currentDepth = 0;
-      while (hasShift && nClasses > 1 && currentDepth != m_depth) {
-        ++currentDepth;
-        double univs = 0;
-        hasShift =
-          CalcMLClassShift(iSigma, iRez, nClasses, probs, maxProbIndex);
-        if (hasShift) {
-          univs = 0;
-          int deleteIndex =
-            std::max_element(probs.begin(), probs.end()) - probs.begin();
-          double deleteProb = probs[deleteIndex];
-          
-          // Count all universes whit shift
-          if (currentDepth != m_depth) {
-            int dummyIndex;
-            for (double jSigma = 1; jSigma < iRez; ++jSigma) {
-              bool addUniv =
-                CalcMLClassShift(jSigma, iRez, nClasses, probs, dummyIndex);
-              if (addUniv) {
-                ++univs;
-                if (jSigma == iSigma) iSigma = univs;
-              }
-            }
-            
-            iRez = univs + 1;
-          } // End shifted universes count
-          
-          // do not change probabilities when there is only two classes!
-          if (nClasses > 2) {
-          probs[deleteIndex] = 0.0;
-          for (int index = 0; index < probs.size(); ++index)
-            probs[index] /= 1 - deleteProb;
-          maxProb = probs[maxProbIndex];
-          }
-          --nClasses;
-        }
-      }
+      CalcMLClassVars(sigma, rez, depth, maxProbIndex, nClasses, probs);
       
       m_nClasses = nClasses;
       m_intType = maxProbIndex;
       m_conf = probs;
     }
-    
-    return true;
   }
   
   
@@ -232,7 +252,7 @@ class MLMultUniverse : public T {
   // nsigma = {1,...,Univs} current universe
   // univs: Total number of universes
   // depth: maximum number of shifts. depth = 1 allows shift to second most
-  //   likely class, depth = 2 allows shit to third most likely class, etc.
+  //   likely class, depth = 2 allows shift to third most likely class, etc.
   //   depth = -1 allows all shifts.
   // Internal parameters:
   //   m_rez: "resolution" of the effective confidence interval scanning
@@ -241,7 +261,9 @@ class MLMultUniverse : public T {
   //============================================================================
   public:
   MLMultUniverse(ChW* chw, double nsigma, double univs, int depth = -1) :
-    m_rez(univs+1), m_depth(depth), T(chw, nsigma) {}
+    m_rez(univs+1), m_depth(depth), T(chw, nsigma) {
+    if (depth < 0) m_depth = 6;
+  }
    
   //============================================================================
   // Machine learning predictions related variables
@@ -280,7 +302,7 @@ class MLMultUniverse : public T {
   }
   
   
-  virtual bool CalcMLHadMultVars() const {
+  virtual void CalcMLHadMultVars() const {
     int currentEntry = T::GetEntry();
     // Runs only if it has not run for the current entry
     if (m_lastEntry != currentEntry) {
@@ -288,66 +310,19 @@ class MLMultUniverse : public T {
       
       double sigma = T::m_nsigma;
       double rez = m_rez;
+      int depth = m_depth;
+      // Will be modified and retrieved
+      int maxProbIndex= T::GetMLHadMult();
       double nClasses = (double)T::GetNMLHadMultClasses();
       std::vector<double> probs = T::GetHadMultSoft();
-      int maxProbIndex = T::GetMLHadMult();
-      double maxProb = probs[maxProbIndex];
+      int entry = T::GetEntry();
       
-      double iRez = rez;
-      double iSigma = sigma;
-      bool hasShift = true;
-      
-      int currentDepth = 0;
-      while (hasShift && nClasses > 1 && currentDepth != m_depth) {
-        ++currentDepth;
-        double univs = 0;
-        hasShift =
-          CalcMLClassShift(iSigma, iRez, nClasses, probs, maxProbIndex);
-        if (hasShift) {
-          univs = 0;
-          int deleteIndex =
-            std::max_element(probs.begin(), probs.end()) - probs.begin();
-          double deleteProb = probs[deleteIndex];
-          
-          if (currentDepth != m_depth) {
-            int dummyIndex;
-            for (double jSigma = 1; jSigma < iRez; ++jSigma) {
-              bool addUniv =
-                CalcMLClassShift(jSigma, iRez, nClasses, probs, dummyIndex);
-              if (addUniv) {
-                ++univs;
-                if (jSigma == iSigma) iSigma = univs;
-              }
-            }
-            
-            iRez = univs + 1;
-          }
-          
-          probs[deleteIndex] = 0.0;
-          for (int index = 0; index < probs.size(); ++index)
-            probs[index] /= 1 - deleteProb;
-          maxProb = probs[maxProbIndex];
-          --nClasses;
-          
-          if (currentDepth > 1 && false) {
-            std::cout << "Current depth " << currentDepth << std::endl;
-            std::cout << "Max depth " << m_depth << std::endl;
-            std::cout << "Univs " << univs << std::endl;
-            std::cout << "nClasses " << nClasses << std::endl;
-            std::cout << "Prev mult " << deleteIndex << ". Next mult "
-              << maxProbIndex << std::endl;
-            std::cout << "Prev prob " << deleteProb << ". Next prob "
-              << maxProb << "\n" << std::endl;
-          }
-        }
-      }
+      CalcMLClassVars(sigma, rez, depth, maxProbIndex, nClasses, probs);
       
       m_nClasses = nClasses;
       m_hadMult = maxProbIndex;
       m_conf = probs;
     }
-    
-    return true;
   }
   
   
