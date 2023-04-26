@@ -107,7 +107,7 @@ void CalcMLClassVars(double sigma,
       
       // do not change probabilities when there is only two classes!
       probs[deleteIndex] = 0.0;
-      if (nClasses > 4) {
+      if (nClasses > 2) {
         for (int index = 0; index < probs.size(); ++index)
           probs[index] /= 1 - deleteProb;
       }
@@ -117,6 +117,21 @@ void CalcMLClassVars(double sigma,
     }
   }
 }
+
+
+//==============================================================================
+// ML classifiers universes constructors
+//==============================================================================
+// Inputs:
+// chw: Chain with events
+// nsigma = {1,...,Univs} current universe
+// univs: Total number of universes
+// depth: maximum number of shifts. depth = 1 allows shift to second most
+//   likely class, depth = 2 allows shift to third most likely class, etc.
+//   depth = -1 allows all shifts.
+// Internal parameters:
+//   m_rez: "resolution" of the effective confidence interval scanning
+//==============================================================================
 
 
 
@@ -134,23 +149,13 @@ class MLIntTypeUniverse : public T {
   mutable std::vector<double> m_conf;
   
   typedef PlotUtils::ChainWrapper ChW;
-   
-  //============================================================================
-  // Constructor
-  //============================================================================
-  // Inputs:
-  // chw: Chain with events
-  // nsigma = {1,...,Univs} current universe
-  // univs: Total number of universes
-  // depth: maximum number of shifts. depth = 1 allows shift to second most
-  //   likely class, depth = 2 allows shift to third most likely class, etc.
-  //   depth = -1 allows all shifts.
-  // Internal parameters:
-  //   m_rez: "resolution" of the effective confidence interval scanning
+  
   public:
   MLIntTypeUniverse(ChW* chw, double nsigma, double univs, int depth = -1) :
-    m_rez(univs+1), T(chw, nsigma) {
+    m_rez(univs+1), m_depth(depth), m_conf(3,0), T(chw, nsigma) {
     if (depth < 0) m_depth = 3;
+    if (depth == 0) Warning("MLIntTypeUniverse", "'depth' has been set to 0. "
+      "No shift will be performed.");
   }
   
   //============================================================================
@@ -174,6 +179,8 @@ class MLIntTypeUniverse : public T {
   
   
   virtual int GetNMLIntTypeClasses() const override {
+    CalcMLIntTypeVars();
+    
     return m_nClasses;
   }
   
@@ -196,17 +203,15 @@ class MLIntTypeUniverse : public T {
     if (m_lastEntry != currentEntry) {
       m_lastEntry = currentEntry;
       
-      double sigma = T::m_nsigma;
-      double rez = m_rez;
-      int depth = m_depth;
       // Will be modified and retrieved
       int maxProbIndex= T::GetMLIntType();
       double nClasses = (double)T::GetNMLIntTypeClasses();
       std::vector<double> probs = T::GetIntTypeSoft();
-      int entry = T::GetEntry();
       
-      CalcMLClassVars(sigma, rez, depth, maxProbIndex, nClasses, probs);
+      CalcMLClassVars(
+        T::m_nsigma, m_rez, m_depth, maxProbIndex, nClasses, probs);
       
+      // Set the variables globally
       m_nClasses = nClasses;
       m_intType = maxProbIndex;
       m_conf = probs;
@@ -217,7 +222,6 @@ class MLIntTypeUniverse : public T {
   virtual bool IsMLShiftedIntType() const {
     return GetMLIntType() != T::GetMLIntType();
   }
-  
   
   //============================================================================
   // Universe information
@@ -243,28 +247,15 @@ class MLMultUniverse : public T {
   mutable std::vector<double> m_conf;
   
   typedef PlotUtils::ChainWrapper ChW;
-   
-  //============================================================================
-  // Constructor
-  //============================================================================
-  // Inputs:
-  // chw: Chain with events
-  // nsigma = {1,...,Univs} current universe
-  // univs: Total number of universes
-  // depth: maximum number of shifts. depth = 1 allows shift to second most
-  //   likely class, depth = 2 allows shift to third most likely class, etc.
-  //   depth = -1 allows all shifts.
-  // Internal parameters:
-  //   m_rez: "resolution" of the effective confidence interval scanning
-  //============================================================================
-  // Constructor
-  //============================================================================
+
   public:
   MLMultUniverse(ChW* chw, double nsigma, double univs, int depth = -1) :
-    m_rez(univs+1), m_depth(depth), T(chw, nsigma) {
+    m_rez(univs+1), m_depth(depth), m_conf(6,0), T(chw, nsigma) {
     if (depth < 0) m_depth = 6;
+    if (depth == 0) Warning("MLIntTypeUniverse", "'depth' has been set to 0. "
+      "No shift will be performed.");
   }
-   
+  
   //============================================================================
   // Machine learning predictions related variables
   //============================================================================
@@ -286,6 +277,8 @@ class MLMultUniverse : public T {
   
   
   virtual int GetNMLHadMultClasses() const override {
+    CalcMLHadMultVars();
+    
     return m_nClasses;
   }
   
@@ -308,17 +301,15 @@ class MLMultUniverse : public T {
     if (m_lastEntry != currentEntry) {
       m_lastEntry = currentEntry;
       
-      double sigma = T::m_nsigma;
-      double rez = m_rez;
-      int depth = m_depth;
       // Will be modified and retrieved
       int maxProbIndex= T::GetMLHadMult();
       double nClasses = (double)T::GetNMLHadMultClasses();
       std::vector<double> probs = T::GetHadMultSoft();
-      int entry = T::GetEntry();
       
-      CalcMLClassVars(sigma, rez, depth, maxProbIndex, nClasses, probs);
+      CalcMLClassVars(
+        T::m_nsigma, m_rez, m_depth, maxProbIndex, nClasses, probs);
       
+      // Set the variables globally
       m_nClasses = nClasses;
       m_hadMult = maxProbIndex;
       m_conf = probs;
@@ -344,7 +335,7 @@ template <class T>
 std::map<std::string, std::vector<T*>>
   GetMLIntTypeSystMap(typename T::config_t chw, int univs) {
   std::map<std::string, std::vector<T*>> ret;
-  int depth = -1;
+  int depth = 1;
   for (double sigma = 1; sigma < (double)univs + 1; ++sigma)
     ret["ML_Int_Type"].push_back(new
       PlotUtils::MLIntTypeUniverse<T>(chw, sigma, (double)univs, depth));
