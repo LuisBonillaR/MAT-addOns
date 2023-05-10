@@ -4,6 +4,7 @@
 namespace PlotUtils {
 
 
+// TODO: Make helper functions be part of a class
 // Helper functions:
 // sigma: number of current universe
 // rez: total number of universes + 1
